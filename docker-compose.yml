@@ -1,0 +1,87 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: orderhut_postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orderhut
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - orderhut_net
+
+  redis:
+    image: redis:alpine
+    container_name: orderhut_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - orderhut_net
+
+  minio:
+    image: minio/minio:latest
+    container_name: orderhut_minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - orderhut_net
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: orderhut-api-1
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://user:password@orderhut_postgres:5432/orderhut?schema=public
+      JWT_SECRET: supersecretkey
+      JWT_EXPIRES_IN: 1d
+
+      # ✅ MinIO CONFIG (IMPORTANT)
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_USE_SSL: "false"
+
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    networks:
+      - orderhut_net
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: orderhut-web-1
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      - api
+    networks:
+      - orderhut_net
+
+networks:
+  orderhut_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
